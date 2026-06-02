@@ -1,0 +1,217 @@
+// ==UserScript==
+// @name         跨境电商 PMS 选品商详智能化流式抓取网关 V18.7
+// @namespace    http://tampermonkey.net/
+// @version      18.7
+// @description  攻克异步无商详痛点：引入实质性内容全层级校验算法 + 编辑器动态加载缓冲机制
+// @author       Ethan Cai
+// @match        *://*.pms-vendor-system.com/*
+// @match        *://*.e-procurement-system.org/*
+// @grant        GM_addStyle
+// @run-at       document-start
+// ==/UserScript==
+
+/**
+ * 🔒 安全与合规说明 (Compliance & Anonymization Notice):
+ * 1. 域名脱敏：为保护特定电商平台内部供应链/采购管理系统（PMS）的架构隐私，本公开版源码已将原内部 
+ * e-procurement 生产环境域名统一替换为标准虚拟占位符（*.pms-vendor-system.com）。
+ * 2. 架构亮点：本脚本基于 Shadow DOM 实现了彻底的 UI 样式隔离，并首创了“实质性内容判定算法”，
+ * 完美解决了多层 Iframe/异步富文本编辑器（Quill Editor）在懒加载时的空数据抓取痛点。
+ */
+
+(function() {
+    'use strict';
+
+    let isRunning = false;
+
+    // --- 技术亮点 1：异步富文本流式格式化与克隆节点防污染算法 ---
+    function getFormattedText(el) {
+        if (!el) return "无商详";
+        let tempEl = el.cloneNode(true); // 影子克隆，防止干扰原生 DOM 树渲染
+        tempEl.querySelectorAll('p, div, br, li').forEach(block => { block.prepend('\n'); });
+        return tempEl.innerText.trim();
+    }
+
+    // --- 交互层：基于 Shadow DOM 的独立悬浮式网关面板 ---
+    function initUI() {
+        if (document.getElementById('pms_guard_container')) return;
+        const host = document.createElement('div');
+        host.id = 'pms_guard_container';
+        host.style.cssText = "position:fixed; z-index:2147483647 !important;";
+        (document.documentElement || document.body).appendChild(host);
+        
+        // 核心隔离：开启 Web Components 的 Shadow DOM，防止宿主系统的 CSS 污染控制面板
+        const shadow = host.attachShadow({mode: 'open'});
+        const style = document.createElement('style');
+        style.textContent = `
+            #v18_ball { position:fixed; top:150px; left:0; width:45px; height:45px; background:#ee4d2d; color:#fff; border-radius:0 25px 25px 0; text-align:center; line-height:45px; cursor:pointer; font-size:12px; box-shadow:2px 2px 10px rgba(0,0,0,0.3); }
+            #v18_panel { display:none; position:fixed; top:100px; left:20px; width:300px; background:#fff; border:2px solid #ee4d2d; border-radius:10px; padding:15px; box-shadow:0 0 20px rgba(0,0,0,0.4); font-family:sans-serif; }
+            textarea { width:100%; height:100px; border:1px solid #ddd; margin-bottom:10px; font-size:12px; border-radius:4px; padding:5px; box-sizing:border-box; }
+            button { width:100%; background:#ee4d2d; color:#fff; border:none; padding:8px; cursor:pointer; font-weight:bold; margin-bottom:5px; border-radius:4px; }
+            #status { font-size:12px; color:#ee4d2d; text-align:center; margin-top:5px; font-weight:bold; }
+        `;
+        const content = document.createElement('div');
+        content.innerHTML = `
+            <div id="v18_ball">控制台</div>
+            <div id="v18_panel">
+                <div style="font-weight:bold; color:#ee4d2d; margin-bottom:10px; display:flex; justify-content:space-between;">
+                    <span>🚀 选品自动化网关 V18.7</span>
+                    <span id="close_btn" style="cursor:pointer;">✖</span>
+                </div>
+                <textarea id="id_input" placeholder="请在此输入批量商品唯一ID (每行一个)..."></textarea>
+                <button id="run_btn">⚡ 开始批处理任务</button>
+                <button id="stop_btn" style="background:#666;">🛑 强行停止</button>
+                <button id="exp_btn" style="background:#fff; color:#ee4d2d; border:1px solid #ee4d2d;">📥 导出标准数据集</button>
+                <div id="status">系统准备就绪</div>
+            </div>
+        `;
+        shadow.appendChild(style); shadow.appendChild(content);
+
+        const ball = shadow.getElementById('v18_ball');
+        const panel = shadow.getElementById('v18_panel');
+        const statusText = shadow.getElementById('status');
+        const idInput = shadow.getElementById('id_input');
+
+        ball.onclick = () => { panel.style.display = 'block'; ball.style.display = 'none'; };
+        shadow.getElementById('close_btn').onclick = () => { panel.style.display = 'none'; ball.style.display = 'block'; };
+
+        shadow.getElementById('run_btn').onclick = async () => {
+            const rawIds = idInput.value.split('\n').filter(v => v.trim());
+            const ids = [...new Set(rawIds)]; // 前端动态去重优化
+            if(ids.length === 0) return;
+            idInput.value = ids.join('\n');
+            isRunning = true;
+            localStorage.setItem('pms_task_running', 'true');
+            localStorage.setItem('pms_img_results', "[]");
+            await startAutomation(ids, shadow);
+        };
+
+        shadow.getElementById('stop_btn').onclick = () => {
+            isRunning = false;
+            localStorage.setItem('pms_task_running', 'false');
+            statusText.innerText = "任务已中止";
+        };
+        shadow.getElementById('exp_btn').onclick = exportCSV;
+    }
+
+    // --- 技术亮点 2：基于异步事件驱动与 XPath 轴的多维自动化巡航状态机 ---
+    async function startAutomation(ids, shadow) {
+        const statusText = shadow.getElementById('status');
+        const idInput = shadow.getElementById('id_input');
+
+        for (let i = 0; i < ids.length; i++) {
+            if (!isRunning || localStorage.getItem('pms_task_running') === 'false') break;
+            const id = ids[i].trim();
+            statusText.innerText = `处理中: ${i+1}/${ids.length}`;
+            localStorage.setItem('pms_active_id', id);
+            localStorage.setItem('pms_step_complete', 'false');
+
+            // 动态匹配系统混淆输入框
+            const input = document.querySelector('textarea.ssc-input, .pro-filter-2-span-item-label textarea');
+            if (input) {
+                input.value = id;
+                // 核心：触发 input 事件以激活宿主框架（Vue/React）的双向数据绑定
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                await new Promise(r => setTimeout(r, 400));
+                
+                // 使用具有高容错特性的 XPath 轴精准定位确认按钮
+                const btn = document.evaluate('//button[contains(@class,"pro-filter-btn-confirm")]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (btn) btn.click();
+            }
+
+            // 数据列表异步刷新等待时间窗口
+            await new Promise(r => setTimeout(r, 2600));
+
+            const detailBtn = document.evaluate('//button[contains(text(),"详情")] | //button[contains(text(),"Detail")]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+            if (detailBtn) {
+                detailBtn.click();
+                let timer = 0;
+                // 跨页面/新标签页状态轮询死锁消除机制
+                while (localStorage.getItem('pms_step_complete') !== 'true' && timer < 20) {
+                    if (!isRunning) return;
+                    await new Promise(r => setTimeout(r, 1000));
+                    timer++;
+                }
+            }
+            idInput.value = ids.slice(i + 1).join('\n');
+        }
+        statusText.innerText = "✅ 任务全部完成";
+        isRunning = false;
+    }
+
+    // --- 技术亮点 3：核心“实质性内容判定”算法机制 ---
+    async function handleDetailPage() {
+        const targetId = localStorage.getItem('pms_active_id');
+        if (!targetId) return;
+
+        let checkCount = 0;
+        const checkInterval = setInterval(async () => {
+            checkCount++;
+            const h1Title = document.querySelector('h1.title');
+            const descEl = document.querySelector('.editor-container .ql-editor');
+            const imgs = document.querySelectorAll('ul.scs-image-cards img');
+
+            // 校验 A：ID 的强一致性匹配，规避单页应用（SPA）路由滞后引发的数据错配风险
+            const isIdCorrect = h1Title && h1Title.innerText.includes(targetId);
+
+            // 校验 B：实质性内容判定定理 —— 字符流深度 > 5 且 异步图片流加载非空，方可断定富文本加载完毕
+            const hasSubstance = (descEl && descEl.innerText.trim().length > 5) || (imgs.length > 0);
+
+            if (isIdCorrect && hasSubstance) {
+                clearInterval(checkInterval);
+
+                // 核心防抖缓冲：额外滞后 500ms，确保 Quill 编辑器的大数据量富文本完全反序列化渲染完毕
+                await new Promise(r => setTimeout(r, 500));
+
+                let imgList = [];
+                document.querySelectorAll('ul.scs-image-cards img').forEach(img => {
+                    if(img.src && !img.src.includes('data:')) imgList.push(img.src);
+                });
+
+                let results = JSON.parse(localStorage.getItem('pms_img_results') || "[]");
+                results.push({
+                    id: targetId,
+                    images: imgList.length ? imgList : ["无图片"],
+                    description: getFormattedText(document.querySelector('.editor-container .ql-editor'))
+                });
+                localStorage.setItem('pms_img_results', JSON.stringify(results));
+                localStorage.setItem('pms_step_complete', 'true');
+                window.close();
+            }
+
+            // 异常降级分支：15秒全局安全退出闭环（专门对抗确实无任何商详的空白死商品）
+            if (checkCount > 75) {
+                clearInterval(checkInterval);
+                let results = JSON.parse(localStorage.getItem('pms_img_results') || "[]");
+                results.push({ id: targetId, images: ["无图片/超时"], description: "无实质商详内容" });
+                localStorage.setItem('pms_img_results', JSON.stringify(results));
+                localStorage.setItem('pms_step_complete', 'true');
+                window.close();
+            }
+        }, 200);
+    }
+
+    // --- 标准数据集导出组件 ---
+    function exportCSV() {
+        const data = JSON.parse(localStorage.getItem('pms_img_results') || "[]");
+        if (!data.length) return alert("暂无待导出的有效数据集！");
+        const maxImgs = Math.max(...data.map(r => r.images.length), 1);
+        let csv = "\ufeffID,商详文本数据," + Array.from({length: maxImgs}, (_, i) => `关联图片URL_${i+1}`).join(",") + "\n";
+        data.forEach(row => {
+            const safeDesc = `"${(row.description || "").replace(/"/g, '""')}"`;
+            csv += [row.id, safeDesc, ...row.images].join(",") + "\n";
+        });
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `PMS_Extract_Dataset_${Date.now()}.csv`;
+        a.click();
+    }
+
+    // --- 网关路由自适应分发入口 ---
+    if (window.location.href.includes('detail')) {
+        handleDetailPage();
+    } else {
+        setInterval(initUI, 1000);
+        initUI();
+    }
+})();

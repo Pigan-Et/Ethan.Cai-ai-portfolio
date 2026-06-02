@@ -1,0 +1,241 @@
+// ==UserScript==
+// @name         虾皮批量链接详情图片抓取工具 V1.6 (纯轮播+滚屏商详版)
+// @namespace    http://tampermonkey.net/
+// @version      1.6
+// @description  结合V1.3完美排序身份证算法与V1.4真人滚屏逼商详逻辑，全域名防隐身强力挂载面板
+// @author       Gemini
+// @match        *://*.xiapibuy.com/*
+// @match        *://*.shopee.co.th/*
+// @match        *://*.shopee.ph/*
+// @match        *://*.shopee.sg/*
+// @match        *://*.shopee.my/*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // ==================== 自定义配置 ====================
+    const PAGE_LOAD_DELAY = 6000; // 落地页总等待时间（6秒），留足滚屏和数据懒加载的时间
+
+    // ==================== 核心控制面板 UI ====================
+    function createControlPanel() {
+        if (document.getElementById('shopee_crawler_panel')) return;
+
+        const panel = document.createElement('div');
+        panel.id = 'shopee_crawler_panel';
+        panel.style = "position:fixed; top:120px; right:20px; z-index:2147483647; background:#fff; border:2px solid #ee4d2d; width:320px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.3); font-family:sans-serif; padding:15px; box-sizing:border-box;";
+
+        const isActive = localStorage.getItem('shopee_crawl_active') === 'true';
+        const queue = JSON.parse(localStorage.getItem('shopee_urls_queue') || '[]');
+        const results = JSON.parse(localStorage.getItem('shopee_crawl_results') || '[]');
+
+        panel.innerHTML = `
+            <div style="font-weight:bold; color:#ee4d2d; margin-bottom:10px; font-size:14px; display:flex; justify-content:space-between; align-items:center;">
+                <span>🦊 虾皮轮播顺序采集器 V1.6</span>
+                <span id="crawl_clear_btn" style="cursor:pointer; font-size:12px; color:#666; text-decoration:underline;">清空缓存</span>
+            </div>
+            <textarea id="crawl_urls_input" style="width:100%; height:120px; border:1px solid #ddd; font-size:12px; border-radius:6px; padding:8px; box-sizing:border-box;"
+                placeholder="请粘贴虾皮商品链接，每行一个...\n例如：https://th.xiapibuy.com/product/xxx/xxx" ${isActive ? 'disabled' : ''}>${isActive ? `正在运行中，剩余 ${queue.length} 个链接待采集...` : ''}</textarea>
+
+            <button id="crawl_start_btn" style="width:100%; background:#ee4d2d; color:#fff; border:none; padding:10px; margin-top:8px; cursor:pointer; font-weight:bold; border-radius:6px;" ${isActive ? 'disabled' : ''}>
+                ${isActive ? '⚡ 正在自动化采集...' : '🚀 开始批量抓取'}
+            </button>
+
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button id="crawl_stop_btn" style="flex:1; background:#666; color:#fff; border:none; padding:8px; cursor:pointer; font-size:12px; border-radius:4px;">🛑 强行停止</button>
+                <button id="crawl_export_btn" style="flex:1; background:#fff; color:#ee4d2d; border:1px solid #ee4d2d; padding:8px; cursor:pointer; font-size:12px; border-radius:4px;">📥 导出当前数据 (${results.length})</button>
+            </div>
+            <div id="crawl_status_msg" style="margin-top:10px; font-size:12px; color:#ee4d2d; font-weight:bold; text-align:center;">
+                状态：${isActive ? '自动化队列执行中...' : '等待运行指令'}
+            </div>
+        `;
+
+        if (document.body) {
+            document.body.appendChild(panel);
+        } else {
+            document.documentElement.appendChild(panel);
+        }
+
+        document.getElementById('crawl_start_btn').onclick = startBatchCrawl;
+        document.getElementById('crawl_stop_btn').onclick = stopCrawl;
+        document.getElementById('crawl_export_btn').onclick = exportToExcel;
+        document.getElementById('crawl_clear_btn').onclick = () => {
+            if(confirm("确定清空所有已抓取的数据和队列吗？")) {
+                localStorage.removeItem('shopee_urls_queue');
+                localStorage.removeItem('shopee_crawl_results');
+                localStorage.removeItem('shopee_crawl_active');
+                window.location.reload();
+            }
+        };
+    }
+
+    function updateStatus(msg) {
+        const el = document.getElementById('crawl_status_msg');
+        if (el) el.innerText = msg;
+    }
+
+    function startBatchCrawl() {
+        const inputArea = document.getElementById('crawl_urls_input');
+        if (!inputArea) return;
+        const urls = inputArea.value.split('\n').map(u => u.trim()).filter(u => u.startsWith('http'));
+
+        if (urls.length === 0) return alert("请输入至少一个有效的虾皮商品完整链接！");
+
+        localStorage.setItem('shopee_urls_queue', JSON.stringify(urls));
+        localStorage.setItem('shopee_crawl_results', '[]');
+        localStorage.setItem('shopee_crawl_active', 'true');
+
+        const nextUrl = urls.shift();
+        localStorage.setItem('shopee_urls_queue', JSON.stringify(urls));
+        window.location.href = nextUrl;
+    }
+
+    function stopCrawl() {
+        localStorage.setItem('shopee_crawl_active', 'false');
+        alert("已终止自动化流程。");
+        window.location.reload();
+    }
+
+    // ==================== 智能化落地页数据提取逻辑 ====================
+    function executeExtraction() {
+        if (localStorage.getItem('shopee_crawl_active') !== 'true') return;
+
+        // 过滤非商品详情页，防止在首页或列表页发生误抓报错
+        if (!window.location.href.includes('/product/')) return;
+
+        updateStatus("⏳ 正在模拟真人滚动页面以强制加载异步商详...");
+
+        // 核心改动 1：模拟滚屏行为，深入商详大腹地，迫使懒加载机制渲染文本数据
+        setTimeout(() => { window.scrollTo({ top: 1200, behavior: 'smooth' }); }, 1000);
+        setTimeout(() => { window.scrollTo({ top: 2200, behavior: 'smooth' }); }, 2500);
+        setTimeout(() => { window.scrollTo({ top: 0, behavior: 'smooth' }); }, 4200);
+
+        // 滚屏完毕，等待节点生成后开始按条件精准抓取
+        setTimeout(() => {
+            // ---- 核心改动 2：纯轮播图高精纯净提取算法（沿用V1.3身份证法） ----
+            let orderedImages = [];
+            let seenImageKeys = new Set(); // 存放图片唯一特征编码
+
+            // 精准锁死小轮播图大盒子容器 (.airUhU)
+            const carouselContainer = document.querySelector('.airUhU') || document.querySelector('.product-thumbnails');
+
+            if (carouselContainer) {
+                // 只在轮播盒子里找图，天然物理隔离黄框规格变体
+                carouselContainer.querySelectorAll('img').forEach(img => {
+                    let rawSrc = img.src || img.getAttribute('data-src') || img.getAttribute('srcset');
+                    if (rawSrc) {
+                        if (rawSrc.includes(' ')) rawSrc = rawSrc.split(' ')[0]; // 切割多分辨率格式
+                        let baseSrc = rawSrc.split('@')[0]; // 拿纯净前缀链接
+
+                        if (baseSrc.startsWith('http')) {
+                            // 分解获取图片的独一无二特征码
+                            let urlParts = baseSrc.split('/');
+                            let imgUniqueKey = urlParts[urlParts.length - 1];
+
+                            // 如果这个特征码在此前没有登记过，则视作新图依序塞入数组桶，克隆的直接剔除
+                            if (imgUniqueKey && !seenImageKeys.has(imgUniqueKey)) {
+                                seenImageKeys.add(imgUniqueKey);
+                                orderedImages.push(baseSrc + "@resize_w164_nl.webp");
+                            }
+                        }
+                    }
+                });
+            } else {
+                console.warn("采集器警告：未能在当前页找到轮播图容器 .airUhU");
+            }
+
+            // ---- 核心改动 3：高容错降级商详提取机制 ----
+            let fullDescription = "";
+            let descLines = [];
+
+            // 规则 A：抓取虾皮各种前端混淆变体中的通用文本段落类名
+            let textTags = document.querySelectorAll('p.QN2lPu, p.EE9CTf, div.EE9CTf, .product-description p');
+            if (textTags.length > 0) {
+                textTags.forEach(el => {
+                    let txt = el.innerText.trim();
+                    if (txt) descLines.push(txt);
+                });
+                fullDescription = descLines.join('\n');
+            }
+
+            // 规则 B：如果类名完全对不上，直接捞取整个商详结构主容器文本（多大底兜底）
+            if (!fullDescription) {
+                const fallbackContainer = document.querySelector('.page-product__description') ||
+                                          document.querySelector('.product-detail__description') ||
+                                          document.querySelector('div[style*="white-space: pre-wrap"]');
+                if (fallbackContainer) {
+                    // 清理垃圾标题词干扰
+                    fullDescription = fallbackContainer.innerText
+                        .replace('商品描述', '')
+                        .replace('Product Description', '')
+                        .replace('รายละเอียดสินค้า', '').trim();
+                }
+            }
+
+            // ---- 数据封装存储 ----
+            const currentUrl = window.location.href;
+            let results = JSON.parse(localStorage.getItem('shopee_crawl_results') || '[]');
+            results.push({
+                url: currentUrl,
+                description: fullDescription || "⚠️商详抓取失败（请确认本商品是否被验证码阻断）",
+                images: orderedImages.length ? orderedImages : ["未抓取到轮播图片"]
+            });
+            localStorage.setItem('shopee_crawl_results', JSON.stringify(results));
+
+            // ---- 驱动下一页巡航 ----
+            let queue = JSON.parse(localStorage.getItem('shopee_urls_queue') || '[]');
+            if (queue.length > 0) {
+                const nextUrl = queue.shift();
+                localStorage.setItem('shopee_urls_queue', JSON.stringify(queue));
+                updateStatus(`✅ 当前页成功！正在前往下一页，剩余 ${queue.length} 个...`);
+
+                setTimeout(() => {
+                    window.location.href = nextUrl;
+                }, 1000);
+            } else {
+                localStorage.setItem('shopee_crawl_active', 'false');
+                updateStatus("🏁 所有链接采集完毕！正在下载 Excel 报表...");
+                exportToExcel();
+            }
+
+        }, PAGE_LOAD_DELAY);
+    }
+
+    // ==================== 导出数据为标准的 Excel (CSV) ====================
+    function exportToExcel() {
+        const data = JSON.parse(localStorage.getItem('shopee_crawl_results') || '[]');
+        if (!data.length) return alert("当前暂无数据！");
+
+        const maxImgs = Math.max(...data.map(r => r.images.length), 1);
+        let headers = ["原网页链接", "商品详情"];
+        for (let i = 1; i <= maxImgs; i++) {
+            headers.push(`图片链接_${i}`);
+        }
+
+        let csvContent = "\ufeff" + headers.join(",") + "\n";
+
+        data.forEach(row => {
+            let rowCells = [];
+            rowCells.push(`"${row.url.replace(/"/g, '""')}"`);
+            rowCells.push(`"${(row.description || "").replace(/"/g, '""')}"`);
+            for (let i = 0; i < maxImgs; i++) {
+                rowCells.push(`"${(row.images[i] || "").replace(/"/g, '""')}"`);
+            }
+            csvContent += rowCells.join(",") + "\n";
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `虾皮高纯净轮播数据_${Date.now()}.csv`;
+        link.click();
+    }
+
+    // ==================== 入口执行初始化 ====================
+    createControlPanel();
+    setInterval(createControlPanel, 1500); // 守护进程，防止跨域或网络突变时面板掉落
+    executeExtraction();
+
+})();

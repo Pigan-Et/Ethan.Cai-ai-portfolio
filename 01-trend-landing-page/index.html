@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>摩配热销原品清单</title>
+    <style>
+        /* ================= 核心 UI 样式 ================= */
+        body { font-family: 'PingFang SC', sans-serif; background: #f4f4f7; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { background: #ee4d2d; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .desc-box { background: rgba(255,255,255,0.2); padding: 10px; margin-top: 10px; border-radius: 4px; font-size: 14px; line-height: 1.6; }
+        .filter-section { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+
+        input, select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+
+        /* 卡片容器 */
+        .card { background: white; border-radius: 8px; overflow: hidden; border: 1px solid #eee; transition: 0.3s; position: relative; display: flex; flex-direction: column; }
+        .card:hover { box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+
+        /* 左上角 P0/P1 标签与申诉按钮 */
+        .tag-btn-container { position: absolute; top: 10px; left: 10px; z-index: 10; display: flex; flex-direction: column; gap: 4px; }
+        .judge-tag { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: inline-block; color: #ffffff; text-align: center; }
+        .bg-p0 { background: #e67e22; }
+        .bg-p1 { background: #17a2b8; }
+        .appeal-btn { background: #fff; border: 1px solid #e67e22; color: #e67e22; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer; width: 40px; text-align: center; }
+
+        /* 右上角多标签系统 (合并流量与特殊标签) */
+        .top-right-tags { position: absolute; top: 10px; right: 10px; z-index: 10; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+        .tag-base { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        
+        /* 流量标签和谐配色方案 */
+        .t-high { background: linear-gradient(90deg, #9D50BB, #6E48AA); color: white; } /* 高价品：高贵紫渐变 */
+        .t-mid { background: linear-gradient(90deg, #36D1DC, #5B86E5); color: white; }  /* 中价品：科技蓝渐变 */
+        .t-low { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; padding: 3px 7px; } /* 低价品：清新淡绿 */
+        
+        /* 原有 P列特殊标签配色 */
+        .t-special { background: linear-gradient(90deg, #ff7a18, #e52e71); color: white; } 
+
+        /* 图片区域 */
+        .img-container { width: 100%; height: 220px; background: #fff; overflow: hidden; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: center; cursor: zoom-in; }
+        .img-container img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+        /* 信息区域 */
+        .info { padding: 15px; flex-grow: 1; display: flex; flex-direction: column; }
+        .title { font-weight: bold; font-size: 15px; margin-bottom: 8px; height: 38px; line-height: 19px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-all; }
+        
+        /* 表现数据行样式 */
+        .performance-row { display: flex; gap: 10px; margin-bottom: 10px; font-size: 11px; color: #777; background: #f8f8f8; padding: 4px 8px; border-radius: 4px; }
+        .perf-item { display: flex; align-items: center; gap: 3px; }
+        .perf-value { color: #333; font-weight: bold; }
+
+        .price-variant-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .price { color: #ee4d2d; font-size: 22px; font-weight: bold; flex-shrink: 0; }
+        .variant { font-size: 13px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 10px; }
+
+        /* 邀请ID区域 */
+        .invite-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+        .model-count-tag { background: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; font-size: 12px; font-weight: bold; padding: 2px 6px; border-radius: 4px; }
+        .invite-id-box { flex-grow: 1; border: 2px dashed #ee4d2d; padding: 4px; text-align: center; font-size: 16px; font-weight: bold; color: #ee4d2d; border-radius: 6px; cursor: pointer; }
+
+        /* 底部栏 */
+        .footer-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 10px; margin-top: auto; }
+        .btn-link { color: #0056b3; font-weight: bold; text-decoration: none; }
+
+        /* 其他交互元素 */
+        .floating-msg-btn { position: fixed; bottom: 30px; right: 30px; background: #ee4d2d; color: white; width: 50px; height: 50px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(238,77,45,0.4); z-index: 1000; transition: transform 0.2s; }
+        #imageModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; justify-content: center; align-items: center; cursor: zoom-out; }
+        #imageModal img { max-width: 90%; max-height: 90%; }
+        #pagination button { padding: 5px 10px; margin: 0 5px; cursor: pointer; border: 1px solid #ddd; background: white; border-radius: 4px; }
+        .jump-container { display: inline-block; margin-left: 20px; font-size: 14px; }
+        .jump-container input { width: 50px; padding: 4px; text-align: center; margin: 0 5px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>🏍️ 摩配热销原品洞察看板</h1>
+        <div class="desc-box">
+            💰 每日数据看板实时更新 | 💹 P0级目标价最优决策支撑 | 📋 提取核心邀请ID建立热销画像，基础流速翻倍！| 💥 独家开放多源原品日销数据 | 💎 重磅流量策略：低价保底，中价120%，高价直给150%视觉霸屏。
+        </div>
+    </header>
+
+    <div class="filter-section">
+        <input type="text" id="searchInput" placeholder="搜索标题/ID/Model ID..." oninput="debouncedFilter()">
+        
+        <div style="display:flex; align-items:center; gap:5px; border:1px solid #ddd; padding:2px 8px; border-radius:4px;">
+            <span style="font-size:12px; color:#666;">📅</span>
+            <input type="date" id="startDate" onchange="applyFilters()" style="border:none; padding:5px; font-size:12px;">
+            <span>-</span>
+            <input type="date" id="endDate" onchange="applyFilters()" style="border:none; padding:5px; font-size:12px;">
+        </div>
+
+        <select id="l1Filter" onchange="updateL2(); applyFilters()"><option value="">一级类目(全部)</option></select>
+        <select id="l2Filter" onchange="applyFilters()"><option value="">二级类目(全部)</option></select>
+        
+        <select id="trafficFilter" onchange="applyFilters()">
+            <option value="">价格段/流量(全部)</option>
+            <option value="高价品">150%流量</option>
+            <option value="中价品">120%流量</option>
+            <option value="低价品">标准流量</option>
+        </select>
+
+        <select id="pFilter" onchange="applyFilters()"><option value="">P0/P1(全部)</option><option value="P0">P0</option><option value="P1">P1</option></select>
+        <select id="tagFilter" onchange="applyFilters()"><option value="">特殊标签(全部)</option></select>
+        <select id="sortOrder" onchange="applyFilters()">
+            <option value="default">默认排序</option>
+            <option value="priceAsc">价格升序</option>
+            <option value="priceDesc">价格降序</option>
+            <option value="salesDesc">销售额降序</option>
+            <option value="ordersDesc">单量降序</option>
+        </select>
+        
+        <input type="number" id="minPrice" placeholder="最低价" oninput="debouncedFilter()" style="width:80px">
+        <input type="number" id="maxPrice" placeholder="最高价" oninput="debouncedFilter()" style="width:80px">
+        
+        <span id="countDisplay" style="font-weight:bold; color:#ee4d2d; margin-left:auto;"></span>
+    </div>
+
+    <div class="product-grid" id="productGrid"></div>
+    <div id="pagination" style="margin:20px; text-align:center;"></div>
+</div>
+
+<div id="imageModal" onclick="this.style.display='none'"><img id="modalImg" src=""></div>
+
+<div class="floating-msg-btn" onclick="window.open('https://github.com/Ethan-Cai-ai-portfolio/issues', '_blank')" title="反馈与建议">💬</div>
+
+<script>
+    /* 基础防键盘拦截逻辑 */
+    document.onkeydown = (e) => {
+        if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && e.keyCode === 73) || (e.ctrlKey && e.keyCode === 85)) return false;
+    };
+
+    // 🌟 已脱敏：使用通用的本地提示或外部公开反馈路径
+    const FORM_URL = "#"; 
+    let products = [], filteredData = [], currentPage = 1;
+    const pageSize = 40;
+    const currentYear = new Date().getFullYear();
+
+    async function openAppealModal(modelId) {
+        try {
+            await navigator.clipboard.writeText(modelId);
+            alert("✅ 已自动复制 Model ID: " + modelId + "\n\n在演示版本中，申诉通道已切换为离线模拟。");
+        } catch (err) {
+            alert("Model ID: " + modelId);
+        }
+    }
+
+    function checkAndOpen1688(url) {
+        let cleanUrl = url ? url.replace(/['"]/g, '').trim() : "";
+        const offerMatch = cleanUrl.match(/https:\/\/detail\.1688\.com\/offer\/\d+\.html/);
+        if (offerMatch) {
+            window.open(offerMatch[0], '_blank');
+        } else if (cleanUrl.startsWith('http')) {
+            window.open(cleanUrl, '_blank');
+        } else {
+            alert('❌ 供应链底价核价链接暂无法查看');
+        }
+    }
+
+    const cleanId = (str) => (str || "").toString().replace(/['"+,]/g, '').trim();
+
+    async function loadData() {
+        try {
+            const res = await fetch('data.csv');
+            const text = await res.text();
+            products = text.split(/\r?\n/).slice(1).map((line, index) => {
+                let r = [], cur = '', q = false;
+                for (let c of line) { if (c === '"') q = !q; else if (c === ',' && !q) { r.push(cur.trim()); cur = ''; } else cur += c; }
+                r.push(cur.trim()); r.push(index); 
+                return r;
+            }).filter(a => {
+                const inviteId = a[8] ? a[8].replace(/["']/g, '').trim() : "";
+                return inviteId !== "";
+            });
+            initFilters(); 
+            applyFilters();
+        } catch (e) { console.error("CSV 数据流加载异常", e); }
+    }
+
+    const mapData = (arr) => {
+        const trafficRaw = arr[18] ? arr[18].trim() : "";
+        let tText = "", tClass = "";
+        if (trafficRaw === "高价品") { tText = "💎 150%流量"; tClass = "t-high"; }
+        else if (trafficRaw === "中价品") { tText = "🚀 120%流量"; tClass = "t-mid"; }
+        else if (trafficRaw === "低价品") { tText = "🟢 标准流量"; tClass = "t-low"; }
+
+        return {
+            modelCount: arr[0] || "1",        
+            title: arr[1],                    
+            variant: arr[2],                  
+            price: parseFloat(arr[3]) || 0,   
+            imgUrl: arr[4],                   
+            link: arr[5],                     
+            l1: arr[6], l2: arr[7],           
+            inviteId: cleanId(arr[8]),        
+            modelId: cleanId(arr[9]),         
+            link1688: arr[10],                
+            judge: arr[11],                   
+            date: cleanId(arr[12]),           
+            specialTag: arr[15] || "",        
+            dailySales: arr[16] || "0",       
+            dailyOrders: arr[17] || "0",      
+            trafficRaw: trafficRaw,           
+            trafficText: tText,               
+            trafficClass: tClass,             
+            idx: arr[arr.length - 1]
+        };
+    };
+
+    function render(dataList, page = 1) {
+        currentPage = page;
+        const grid = document.getElementById('productGrid');
+        grid.innerHTML = '';
+        dataList.slice((page - 1) * pageSize, page * pageSize).forEach(arr => {
+            const item = mapData(arr);
+            const card = document.createElement('div');
+            card.className = 'card';
+            
+            let tagsHtml = `<div class="top-right-tags">`;
+            if (item.trafficText) {
+                tagsHtml += `<div class="tag-base ${item.trafficClass}">${item.trafficText}</div>`;
+            }
+            if (item.specialTag) {
+                tagsHtml += `<div class="tag-base t-special">${item.specialTag}</div>`;
+            }
+            tagsHtml += `</div>`;
+
+            card.innerHTML = `
+                <div class="tag-btn-container">
+                    <div class="judge-tag ${item.judge === 'P0' ? 'bg-p0' : 'bg-p1'}" onclick="checkAndOpen1688('${item.link1688}')">${item.judge}</div>
+                    ${item.judge === 'P0' ? `<button class="appeal-btn" onclick="openAppealModal('${item.modelId}')">申诉</button>` : ''}
+                </div>
+                ${tagsHtml}
+                <div class="img-container" ondblclick="document.getElementById('modalImg').src='${item.imgUrl}'; document.getElementById('imageModal').style.display='flex';">
+                    <img src="${item.imgUrl}" loading="lazy">
+                </div>
+                <div class="info">
+                    <div class="title" title="${item.title}">${item.title}</div>
+                    <div class="performance-row">
+                        <div class="perf-item">日销售额<span class="perf-value">${item.dailySales}</span></div>
+                        <div class="perf-item">日单量<span class="perf-value">${item.dailyOrders}</span></div>
+                    </div>
+                    <div class="price-variant-row">
+                        <span class="price">¥${item.price}</span>
+                        <span class="variant" title="${item.variant}">${item.variant}</span>
+                    </div>
+                    <div class="invite-row">
+                        <div class="model-count-tag">${item.modelCount}款</div>
+                        <div class="invite-id-box" onclick="navigator.clipboard.writeText('${item.inviteId}'); alert('已复制邀请ID: ${item.inviteId}')">${item.inviteId}</div>
+                    </div>
+                    <div class="footer-row">
+                        <span>${item.date}发布</span>
+                        <span style="font-weight:bold;">${item.modelId}</span>
+                        <a href="${item.link}" target="_blank" class="btn-link">原品 >>></a>
+                    </div>
+                </div>`;
+            grid.appendChild(card);
+        });
+        renderPagination(dataList.length);
+    }
+
+    function applyFilters() {
+        const q = document.getElementById('searchInput').value.toLowerCase();
+        const l1 = document.getElementById('l1Filter').value;
+        const l2 = document.getElementById('l2Filter').value;
+        const p = document.getElementById('pFilter').value;
+        const tag = document.getElementById('tagFilter').value;
+        const traffic = document.getElementById('trafficFilter').value;
+        
+        const minVal = document.getElementById('minPrice').value;
+        const maxVal = document.getElementById('maxPrice').value;
+        const min = minVal !== "" ? parseFloat(minVal) : 0;
+        const max = maxVal !== "" ? parseFloat(maxVal) : Infinity;
+        
+        const start = document.getElementById('startDate').value;
+        const end = document.getElementById('endDate').value;
+        
+        filteredData = products.filter(arr => {
+            const i = mapData(arr);
+            const isMatch = i.title.toLowerCase().includes(q) || i.inviteId.toLowerCase().includes(q) || i.modelId.toLowerCase().includes(q);
+            let dateMatch = true;
+            if (start || end) {
+                const itemDate = new Date(`${currentYear}-${i.date}`);
+                if (start && itemDate < new Date(start)) dateMatch = false;
+                if (end && itemDate > new Date(end)) dateMatch = false;
+            }
+            return isMatch 
+                && dateMatch 
+                && (!l1 || i.l1 === l1) 
+                && (!l2 || i.l2 === l2) 
+                && (!traffic || i.trafficRaw === traffic)
+                && (!p || i.judge === p) 
+                && (!tag || i.specialTag === tag) 
+                && (i.price >= min && i.price <= max);
+        });
+        
+        const sort = document.getElementById('sortOrder').value;
+        if (sort === 'priceAsc') filteredData.sort((a,b) => a[3] - b[3]);
+        else if (sort === 'priceDesc') filteredData.sort((a,b) => b[3] - a[3]);
+        else if (sort === 'salesDesc') filteredData.sort((a,b) => parseFloat(b[16] || 0) - parseFloat(a[16] || 0));
+        else if (sort === 'ordersDesc') filteredData.sort((a,b) => parseFloat(b[17] || 0) - parseFloat(a[17] || 0));
+        else filteredData.sort((a,b) => a[a.length-1] - b[b.length-1]);
+        
+        document.getElementById('countDisplay').innerText = `已筛选：${filteredData.length} 款`;
+        render(filteredData, 1);
+    }
+
+    function renderPagination(total) {
+        const totalPages = Math.ceil(total / pageSize) || 1;
+        const nav = document.getElementById('pagination');
+        nav.innerHTML = `
+            <button onclick="changePage(-1)" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>
+            <span style="margin:0 15px;">${currentPage} / ${totalPages}</span>
+            <button onclick="changePage(1)" ${currentPage >= totalPages ? 'disabled' : ''}>下一页</button>
+            <div class="jump-container">
+                跳转到 <input type="number" id="pageJumpInput" min="1" max="${totalPages}" value="${currentPage}"> 页
+                <button onclick="jumpToPage(${totalPages})">确定</button>
+            </div>
+        `;
+    }
+
+    function changePage(delta) { 
+        render(filteredData, currentPage + delta); 
+        window.scrollTo({ top: 0, behavior: 'smooth' }); 
+    }
+
+    function jumpToPage(maxPage) {
+        const inputVal = document.getElementById('pageJumpInput').value;
+        const targetPage = parseInt(inputVal);
+        if (targetPage >= 1 && targetPage <= maxPage) {
+            render(filteredData, targetPage);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            alert(`请输入有效的页码，范围：1 - ${maxPage}`);
+        }
+    }
+
+    function initFilters() {
+        const l1s = [...new Set(products.map(p => p[6]))].filter(v => v);
+        l1s.forEach(v => { document.getElementById('l1Filter').innerHTML += `<option value="${v}">${v}</option>`; });
+        const tags = [...new Set(products.map(p => p[15]?.trim()))].filter(v => v);
+        tags.forEach(v => { document.getElementById('tagFilter').innerHTML += `<option value="${v}">${v}</option>`; });
+    }
+
+    function updateL2() { 
+        const l1 = document.getElementById('l1Filter').value; 
+        const s = document.getElementById('l2Filter'); 
+        s.innerHTML = '<option value="">二级类目(全部)</option>'; 
+        [...new Set(products.filter(p => !l1 || p[6] === l1).map(p => p[7]))].forEach(v => { if(v) s.innerHTML += `<option value="${v}">${v}</option>`; }); 
+    }
+
+    let timer; const debouncedFilter = () => { clearTimeout(timer); timer = setTimeout(applyFilters, 300); };
+    window.onload = loadData;
+    // Data-Powered Template | Author: Ethan Cai (yinanchoi@163.com)
+</script>
+<footer style="
+    text-align: center; 
+    color: #86868b; 
+    font-size: 11px; 
+    margin-top: 80px; 
+    padding: 40px; 
+    letter-spacing: 0.5px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+">
+    <div style="margin-bottom: 4px;">Designed by Ethan Cai</div>
+    <div style="opacity: 0.8;">yinanchoi@163.com</div>
+</footer>
+
+<div id="author-tag" onclick="this.style.display='none'" style="
+    display:none; 
+    position:fixed; 
+    top:20px; 
+    right:20px; 
+    background:rgba(255,255,255,0.95); 
+    color:#333; 
+    padding:6px 10px; 
+    border-radius:12px; 
+    z-index:9999; 
+    cursor:pointer; 
+    font-family: -apple-system, sans-serif;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    border: 1px solid rgba(0,0,0,0.1);
+">
+    🚀 数字化供应链效能看板 · 生产力就绪
+</div>
+
+<div onclick="document.getElementById('author-tag').style.display='block'" 
+     style="width:120px; height:30px; margin:-40px auto 0; cursor:pointer; background:transparent; z-index:9998;">
+</div>
+</body>
+</html>

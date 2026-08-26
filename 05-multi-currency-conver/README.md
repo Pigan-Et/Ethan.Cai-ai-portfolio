@@ -22,3 +22,6 @@
 - 极大提升跨境业务人员的多币种核算与报价效率
 - 提供极简直观的交互体验，无需依赖复杂的第三方工具
 - 零依赖轻量化设计，秒级加载与运行
+
+- ## 在线演示
+[https://pigan-et.github.io/shopee-products/](https://pigan-et.github.io/multi-currency-converter/)
